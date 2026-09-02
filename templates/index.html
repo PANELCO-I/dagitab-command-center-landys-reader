@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Landis+Gyr Live Meter Dashboard</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: #0f172a;
+        color: #f8fafc;
+        margin: 0;
+        padding: 20px;
+      }
+      h1 {
+        text-align: center;
+        color: #38bdf8;
+        margin-bottom: 30px;
+      }
+      .grid {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        width: 320px;
+        padding: 20px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+      }
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #334155;
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+      }
+      .feeder-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: #f1f5f9;
+      }
+      .status {
+        font-size: 12px;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-weight: bold;
+      }
+      .status-online {
+        background: #059669;
+        color: #ecfdf5;
+      }
+      .status-offline {
+        background: #dc2626;
+        color: #fef2f2;
+      }
+      .metric-row {
+        display: flex;
+        justify-content: space-between;
+        margin: 8px 0;
+        font-size: 15px;
+      }
+      .metric-value {
+        font-weight: bold;
+        color: #38bdf8;
+      }
+      .footer-time {
+        text-align: right;
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Landis+Gyr Real-Time Meter Monitor</h1>
+    <div class="grid" id="feeder-container"></div>
+
+    <script>
+      async function updateDashboard() {
+        try {
+          const response = await fetch("/api/live");
+          const feeders = await response.json();
+
+          const container = document.getElementById("feeder-container");
+          container.innerHTML = "";
+
+          for (const [name, info] of Object.entries(feeders)) {
+            const isOnline = info.status === "Online";
+            const statusClass = isOnline ? "status-online" : "status-offline";
+            const data = info.data;
+
+            let metricsHtml = "";
+            if (isOnline) {
+              metricsHtml = `
+                            <div class="metric-row"><span>Voltage L1:</span><span class="metric-value">${data.voltage_l1 ?? "N/A"} V</span></div>
+                            <div class="metric-row"><span>Voltage L2:</span><span class="metric-value">${data.voltage_l2 ?? "N/A"} V</span></div>
+                            <div class="metric-row"><span>Current L1:</span><span class="metric-value">${data.current_l1 ?? "N/A"} A</span></div>
+                            <div class="metric-row"><span>Current L2:</span><span class="metric-value">${data.current_l2 ?? "N/A"} A</span></div>
+                            <div class="metric-row"><span>Frequency:</span><span class="metric-value">${data.frequency ?? "N/A"} Hz</span></div>
+                            <div class="metric-row"><span>Active Energy:</span><span class="metric-value">${data.active_energy ?? "N/A"} kWh</span></div>
+                        `;
+            } else {
+              metricsHtml = `<div style="color: #ef4444; text-align: center; padding: 20px 0;">${info.status}</div>`;
+            }
+
+            const cardHtml = `
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="feeder-title">${name}</span>
+                                <span class="status ${statusClass}">${isOnline ? "Online" : "Offline"}</span>
+                            </div>
+                            <div>${metricsHtml}</div>
+                            <div class="footer-time">IP: ${info.ip} | Updated: ${info.last_updated}</div>
+                        </div>
+                    `;
+            container.innerHTML += cardHtml;
+          }
+        } catch (err) {
+          console.error("Dashboard fetch error:", err);
+        }
+      }
+
+      setInterval(updateDashboard, 1000);
+      updateDashboard();
+    </script>
+  </body>
+</html>
