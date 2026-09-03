@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 FEEDERS = [
-    {"name": "FEEDER 22/4A", "ip": "172.16.26.185", "port": 4059},
+    {"name": "FEEDER 22/4A", "ip": "192.168.0.22", "port": 4059},
     {"name": "FEEDER 4", "ip": "192.168.0.4", "port": 80},
     {"name": "FEEDER 5", "ip": "192.168.0.5", "port": 4059},
     {"name": "FEEDER 6", "ip": "192.168.0.6", "port": 80},
