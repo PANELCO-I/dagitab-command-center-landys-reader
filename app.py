@@ -74,6 +74,14 @@ def read_single_meter(ip: str, port: int, name: str = "") -> dict:
     client.serverAddress = 1
     client.authentication = Authentication.NONE
     client.security = Security.NONE
+    try:
+        client.useLogicalNameReferencing = False  # try SN referencing — flip to True if this errors
+    except AttributeError as err:
+        log(name, f"WARN: could not set useLogicalNameReferencing ({err}) — using library default")
+
+    log(name, f"Config: clientAddress={client.clientAddress}, serverAddress={client.serverAddress}, "
+               f"auth={client.authentication}, security={client.security}, "
+               f"LN referencing={getattr(client, 'useLogicalNameReferencing', 'default')}")
 
     results = {}
 
@@ -91,11 +99,15 @@ def read_single_meter(ip: str, port: int, name: str = "") -> dict:
     except ConnectionRefusedError as err:
         log(name, f"FAIL @ TCP connect: connection refused ({err}) - nothing listening on this port")
         return {"status": "Offline (connection refused)", "data": {}}
+    except socket.gaierror as err:
+        log(name, f"FAIL @ TCP connect: DNS/address resolution error ({err}) - check IP is valid/reachable")
+        return {"status": f"Offline (bad address: {err})", "data": {}}
     except OSError as err:
-        log(name, f"FAIL @ TCP connect: OS error ({err}) - check IP/route/network")
+        log(name, f"FAIL @ TCP connect: OS error [{type(err).__name__}] ({err}) - check IP/route/network, "
+                   f"possibly 'No route to host' if on wrong subnet")
         return {"status": f"Offline (connect error: {err})", "data": {}}
     except Exception as err:
-        log(name, f"FAIL @ TCP connect: unexpected error ({err})")
+        log(name, f"FAIL @ TCP connect: unexpected [{type(err).__name__}]: {err}")
         return {"status": f"Offline (connect error: {err})", "data": {}}
 
     # --- Step 2: AARQ / AARE handshake ---
@@ -108,7 +120,8 @@ def read_single_meter(ip: str, port: int, name: str = "") -> dict:
             log(name, "Waiting for AARE response...")
             resp = s.recv(1024)
             if not resp:
-                log(name, "FAIL @ AARE: connection closed by remote with no data")
+                log(name, "FAIL @ AARE: connection closed by remote with no data "
+                           "(remote actively refused/dropped after connect — often a session/config mismatch)")
                 s.close()
                 return {"status": "Offline (closed during handshake)", "data": {}}
             log(name, f"Received {len(resp)} bytes for AARE.")
@@ -116,11 +129,19 @@ def read_single_meter(ip: str, port: int, name: str = "") -> dict:
         log(name, "Association established (AARE parsed OK).")
     except socket.timeout:
         log(name, "FAIL @ AARQ/AARE: timed out waiting for reply - meter not responding to this client "
-                   "(possible session already held by another client, e.g. MAP110)")
+                   "(possible session already held by another client, e.g. MAP110, or "
+                   "clientAddress/serverAddress/LN-SN referencing mismatch)")
         s.close()
         return {"status": "Offline (AARE timeout - session busy?)", "data": {}}
+    except (ConnectionResetError, BrokenPipeError) as err:
+        log(name, f"FAIL @ AARQ/AARE: connection reset/broken pipe [{type(err).__name__}] ({err}) "
+                   f"- meter dropped the connection mid-handshake, often means it rejected our AARQ params")
+        s.close()
+        return {"status": f"Offline (connection reset: {err})", "data": {}}
     except Exception as err:
-        log(name, f"FAIL @ AARQ/AARE: {err}")
+        log(name, f"FAIL @ AARQ/AARE: [{type(err).__name__}] {err} "
+                   f"- if this is a parse/decode error, AARE bytes came back but in unexpected format "
+                   f"(check clientAddress/serverAddress/referencing settings)")
         s.close()
         return {"status": f"Offline (handshake error: {err})", "data": {}}
 
@@ -145,8 +166,11 @@ def read_single_meter(ip: str, port: int, name: str = "") -> dict:
         except socket.timeout:
             log(name, f"FAIL @ read '{key}' ({obis_code}): timed out")
             results[key] = "Err"
+        except (ConnectionResetError, BrokenPipeError) as err:
+            log(name, f"FAIL @ read '{key}' ({obis_code}): connection reset [{type(err).__name__}]: {err}")
+            results[key] = "Err"
         except Exception as err:
-            log(name, f"FAIL @ read '{key}' ({obis_code}): {err}")
+            log(name, f"FAIL @ read '{key}' ({obis_code}): [{type(err).__name__}] {err}")
             results[key] = "Err"
 
     s.close()
